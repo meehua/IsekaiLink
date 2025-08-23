@@ -1,13 +1,8 @@
-use axum::{extract::{Form, State}, Extension, Json};
+use axum::{extract::{Form, State}, Json};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, sync::{Arc, Mutex}};
-use std::ffi::CString;
-use axum::http::{header, HeaderMap};
-use axum::response::{IntoResponse, Redirect};
-use log::error;
-use crate::types::session_store::SessionStore;
+use std::{ sync::{Arc}};
 use crate::types::app_state::AppState;
-use crate::db::{DbClient, User};
+use crate::db::{DbClient};
 
 #[derive(Deserialize)]
 pub struct LoginForm {
@@ -24,10 +19,6 @@ pub struct LoginResponse {
 #[axum::debug_handler]
 pub async fn login(State(state): State<Arc<AppState>>, Form(form): Form<LoginForm>)
     -> Json<LoginResponse> {
-    // format!(
-    //     "Received form: username={}, password={}",
-    //     form.username, form.password
-    // )
     // 验证用户名密码
     let username = form.username.clone();
     let password = form.password.clone();

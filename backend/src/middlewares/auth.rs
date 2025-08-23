@@ -1,11 +1,10 @@
 use axum::{
-    Router, routing::{get, post},
     response::{Redirect, IntoResponse},
     http::{StatusCode, HeaderMap, header},
-    middleware::{self, Next},
+    middleware::{Next},
     extract::{Request, Extension},
 };
-use std::{collections::HashMap, sync::{Arc, Mutex}};
+use std::{sync::{Arc}};
 use axum::extract::State;
 use crate::types::app_state::AppState;
 use crate::types::session_store::SessionStore;

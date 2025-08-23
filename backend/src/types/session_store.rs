@@ -1,8 +1,5 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-
-use axum::extract::Extension;
-use axum::response::IntoResponse;
 use rand::Rng;
 use std::fmt;
 
