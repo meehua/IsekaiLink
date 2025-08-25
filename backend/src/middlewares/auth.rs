@@ -15,13 +15,20 @@ pub(crate) async fn auth_middleware(
     mut req: Request,
     next: Next,
 ) -> impl IntoResponse {
-    // 1. 从cookie中获取token
+    // 1. 从Authorization头中获取token
     let token = req.headers()
-        .get("Cookie")
-        .and_then(|c| c.to_str().ok())
-        .and_then(|c| parse_session_token(c))
-        .unwrap_or_default()
-        .clone();
+        .get("Authorization")
+        .and_then(|auth_header| auth_header.to_str().ok())
+        .and_then(|auth_value| {
+            // 通常Authorization头的格式是 "Bearer <token>"
+            if auth_value.starts_with("Bearer ") {
+                Some(auth_value[7..].trim().to_string())
+            } else {
+                // 也可以支持其他格式或者直接就是token
+                Some(auth_value.trim().to_string())
+            }
+        })
+        .unwrap_or_default();
 
     // 2. 验证会话（安全持有锁）
     let username = {
@@ -52,13 +59,4 @@ async fn logout(Extension(sessions): Extension<SessionStore>) -> impl IntoRespon
                    "session_token=; Path=/; Max-Age=0".parse().unwrap());
 
     (headers, Redirect::to("/"))
-}
-
-// 辅助函数：从cookie字符串中解析session_token
-fn parse_session_token(cookie_str: &str) -> Option<String> {
-    cookie_str.split(';')
-        .map(|s| s.trim())
-        .find(|s| s.starts_with("session_token="))
-        .and_then(|s| s.splitn(2, '=').nth(1))
-        .map(|s| s.to_string())
 }
