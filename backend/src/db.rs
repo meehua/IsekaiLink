@@ -117,21 +117,23 @@ impl DbClient {
         group_name: &str,
         group_slug: &str,
         group_key: Option<&str>,
+        is_public: bool,
     ) -> Result<i64, Error> {
-        let sql = "INSERT INTO link_groups (user_id, group_name, group_slug, group_key)
-                   VALUES (?, ?, ?, ?)";
+        let sql = "INSERT INTO link_groups (user_id, group_name, group_slug, group_key, is_public)
+                   VALUES (?, ?, ?, ?, ?)";
         let result = sqlx::query(sql)
             .bind(user_id)
             .bind(group_name)
             .bind(group_slug)
             .bind(group_key)
+            .bind(is_public)
             .execute(&self.pool)
             .await?;
         Ok(result.last_insert_rowid())
     }
 
     pub async fn get_link_group_by_id(&self, id: i64) -> Result<LinkGroup, Error> {
-        let sql = "SELECT id, user_id, group_name, group_slug, group_key, created_at
+        let sql = "SELECT id, user_id, group_name, group_slug, group_key, is_public, created_at
                    FROM link_groups WHERE id = ?";
         sqlx::query_as::<_, LinkGroup>(sql)
             .bind(id)
@@ -140,7 +142,7 @@ impl DbClient {
     }
 
     pub async fn get_groups_by_user(&self, user_id: i64) -> Result<Vec<LinkGroup>, Error> {
-        let sql = "SELECT id, user_id, group_name, group_slug, group_key, created_at
+        let sql = "SELECT id, user_id, group_name, group_slug, group_key, is_public, created_at
                    FROM link_groups WHERE user_id = ?";
         sqlx::query_as::<_, LinkGroup>(sql)
             .bind(user_id)
@@ -149,7 +151,7 @@ impl DbClient {
     }
 
     pub async fn get_group_by_slug(&self, slug: &str) -> Result<LinkGroup, Error> {
-        let sql = "SELECT id, user_id, group_name, group_slug, group_key, created_at
+        let sql = "SELECT id, user_id, group_name, group_slug, group_key, is_public, created_at
                    FROM link_groups WHERE group_slug = ?";
         sqlx::query_as::<_, LinkGroup>(sql)
             .bind(slug)
@@ -163,14 +165,16 @@ impl DbClient {
         new_name: &str,
         new_slug: &str,
         new_key: Option<&str>,
+        is_public: bool,
     ) -> Result<bool, Error> {
         let sql = "UPDATE link_groups
-                  SET group_name = ?, group_slug = ?, group_key = ?
+                  SET group_name = ?, group_slug = ?, group_key = ?, is_public = ?
                   WHERE id = ?";
         let result = sqlx::query(sql)
             .bind(new_name)
             .bind(new_slug)
             .bind(new_key)
+            .bind(is_public)
             .bind(id)
             .execute(&self.pool)
             .await?;
@@ -189,29 +193,27 @@ impl DbClient {
     // ============== links 表操作 ==============
     pub async fn create_link(
         &self,
-        group_id: i64,
-        link_type: &str,
+        user_id: i64,
+        link_type: Option<&str>,
         url: &str,
         name: Option<&str>,
         content: Option<&str>,
-        cache_id: Option<i64>,
     ) -> Result<i64, Error> {
-        let sql = "INSERT INTO links (group_id, type, url, name, content, cache_id)
-                   VALUES (?, ?, ?, ?, ?, ?)";
+        let sql = "INSERT INTO links (user_id, type, url, name, content)
+                   VALUES (?, ?, ?, ?, ?)";
         let result = sqlx::query(sql)
-            .bind(group_id)
+            .bind(user_id)
             .bind(link_type)
             .bind(url)
             .bind(name)
             .bind(content)
-            .bind(cache_id)
             .execute(&self.pool)
             .await?;
         Ok(result.last_insert_rowid())
     }
 
     pub async fn get_link_by_id(&self, id: i64) -> Result<Link, Error> {
-        let sql = "SELECT id, group_id, cache_id, type, url, name, content, created_at
+        let sql = "SELECT id, user_id, type, url, name, content, created_at
                    FROM links WHERE id = ?";
         sqlx::query_as::<_, Link>(sql)
             .bind(id)
@@ -219,25 +221,23 @@ impl DbClient {
             .await
     }
 
-    pub async fn get_links_by_group(&self, group_id: i64) -> Result<Vec<Link>, Error> {
-        let sql = "SELECT id, group_id, cache_id, type, url, name, content, created_at
-                   FROM links WHERE group_id = ?";
+
+    pub async fn get_links_by_user(&self, user_id: i64) -> Result<Vec<Link>, Error> {
+        let sql = "SELECT id, user_id, type, url, name, content, created_at
+                   FROM links WHERE user_id = ?";
         sqlx::query_as::<_, Link>(sql)
-            .bind(group_id)
+            .bind(user_id)
             .fetch_all(&self.pool)
             .await
     }
 
-    pub async fn get_links_with_cache_info(&self, group_id: i64) -> Result<Vec<LinkWithCache>, Error> {
-        let sql = "
-            SELECT
-                l.id, l.group_id, l.cache_id, l.type, l.url, l.name, l.content, l.created_at,
-                fc.cache_slug, fc.content as cache_content
-            FROM links l
-            LEFT JOIN file_caches fc ON l.cache_id = fc.id
-            WHERE l.group_id = ?
-        ";
-        sqlx::query_as::<_, LinkWithCache>(sql)
+
+    pub async fn get_links_by_group(&self, group_id: i64) -> Result<Vec<Link>, Error> {
+        let sql = "SELECT l.id, l.user_id, l.type, l.url, l.name, l.content, l.created_at
+                   FROM links l
+                   JOIN link_group_association lga ON l.id = lga.link_id
+                   WHERE lga.group_id = ?";
+        sqlx::query_as::<_, Link>(sql)
             .bind(group_id)
             .fetch_all(&self.pool)
             .await
@@ -249,16 +249,16 @@ impl DbClient {
         new_url: &str,
         new_name: Option<&str>,
         new_content: Option<&str>,
-        new_cache_id: Option<i64>,
+        new_type: Option<&str>,
     ) -> Result<bool, Error> {
         let sql = "UPDATE links
-                  SET url = ?, name = ?, content = ?, cache_id = ?
+                  SET url = ?, name = ?, content = ?, type = ?
                   WHERE id = ?";
         let result = sqlx::query(sql)
             .bind(new_url)
             .bind(new_name)
             .bind(new_content)
-            .bind(new_cache_id)
+            .bind(new_type)
             .bind(id)
             .execute(&self.pool)
             .await?;
@@ -274,46 +274,36 @@ impl DbClient {
         Ok(result.rows_affected() > 0)
     }
 
-    // ============== file_caches 表操作 ==============
-    pub async fn create_file_cache(
+    // ============== caches 表操作 ==============
+    pub async fn create_cache(
         &self,
-        cache_slug: Option<&str>,
         content: &str,
+        refresh_interval: i32,
     ) -> Result<i64, Error> {
-        let sql = "INSERT INTO file_caches (cache_slug, content)
-                   VALUES (?, ?)";
+        let sql = "INSERT INTO caches (content, refresh_interval) VALUES (?, ?)";
         let result = sqlx::query(sql)
-            .bind(cache_slug)
             .bind(content)
+            .bind(refresh_interval)
             .execute(&self.pool)
             .await?;
         Ok(result.last_insert_rowid())
     }
 
-    pub async fn get_file_cache_by_id(&self, id: i64) -> Result<FileCache, Error> {
-        let sql = "SELECT id, cache_slug, content, created_at, updated_at
-                   FROM file_caches WHERE id = ?";
-        sqlx::query_as::<_, FileCache>(sql)
+    pub async fn get_cache_by_id(&self, id: i64) -> Result<Cache, Error> {
+        let sql = "SELECT id, content, refresh_interval, created_at, updated_at
+                   FROM caches WHERE id = ?";
+        sqlx::query_as::<_, Cache>(sql)
             .bind(id)
             .fetch_one(&self.pool)
             .await
     }
 
-    pub async fn get_file_cache_by_slug(&self, cache_slug: &str) -> Result<FileCache, Error> {
-        let sql = "SELECT id, cache_slug, content, created_at, updated_at
-                   FROM file_caches WHERE cache_slug = ?";
-        sqlx::query_as::<_, FileCache>(sql)
-            .bind(cache_slug)
-            .fetch_one(&self.pool)
-            .await
-    }
-
-    pub async fn update_file_cache_content(
+    pub async fn update_cache_content(
         &self,
         id: i64,
         new_content: &str,
     ) -> Result<bool, Error> {
-        let sql = "UPDATE file_caches SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?";
+        let sql = "UPDATE caches SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?";
         let result = sqlx::query(sql)
             .bind(new_content)
             .bind(id)
@@ -322,8 +312,8 @@ impl DbClient {
         Ok(result.rows_affected() > 0)
     }
 
-    pub async fn delete_file_cache(&self, id: i64) -> Result<bool, Error> {
-        let sql = "DELETE FROM file_caches WHERE id = ?";
+    pub async fn delete_cache(&self, id: i64) -> Result<bool, Error> {
+        let sql = "DELETE FROM caches WHERE id = ?";
         let result = sqlx::query(sql)
             .bind(id)
             .execute(&self.pool)
@@ -331,33 +321,89 @@ impl DbClient {
         Ok(result.rows_affected() > 0)
     }
 
-    // ============== group_cache 关联表操作 ==============
-    pub async fn create_group_cache_association(
+    // ============== link_group_association 表操作 ==============
+    // 链接与组的关联操作
+    pub async fn add_link_to_group(
         &self,
+        link_id: i64,
         group_id: i64,
+    ) -> Result<bool, Error> {
+        let sql = "INSERT OR IGNORE INTO link_group_association (link_id, group_id) VALUES (?, ?)";
+        let result = sqlx::query(sql)
+            .bind(link_id)
+            .bind(group_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn remove_link_from_group(
+        &self,
+        link_id: i64,
+        group_id: i64,
+    ) -> Result<bool, Error> {
+        let sql = "DELETE FROM link_group_association WHERE link_id = ? AND group_id = ?";
+        let result = sqlx::query(sql)
+            .bind(link_id)
+            .bind(group_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn get_groups_for_link(&self, link_id: i64) -> Result<Vec<LinkGroup>, Error> {
+        let sql = "SELECT lg.id, lg.user_id, lg.group_name, lg.group_slug, lg.group_key, lg.is_public, lg.created_at
+                   FROM link_groups lg
+                   JOIN link_group_association lga ON lg.id = lga.group_id
+                   WHERE lga.link_id = ?";
+        sqlx::query_as::<_, LinkGroup>(sql)
+            .bind(link_id)
+            .fetch_all(&self.pool)
+            .await
+    }
+
+    // ============== resource_cache 表操作 ==============
+    pub async fn create_resource_cache_association(
+        &self,
+        resource_type: &str,
+        resource_id: i64,
         cache_id: i64,
     ) -> Result<bool, Error> {
-        let sql = "INSERT INTO group_cache (group_id, cache_id) VALUES (?, ?)";
+        let sql = "INSERT INTO resource_cache (resource_type, resource_id, cache_id) VALUES (?, ?, ?)";
         let result = sqlx::query(sql)
-            .bind(group_id)
+            .bind(resource_type)
+            .bind(resource_id)
             .bind(cache_id)
             .execute(&self.pool)
             .await?;
         Ok(result.rows_affected() > 0)
     }
 
-    pub async fn get_group_cache_association(&self, group_id: i64) -> Result<GroupCacheAssociation, Error> {
-        let sql = "SELECT group_id, cache_id FROM group_cache WHERE group_id = ?";
-        sqlx::query_as::<_, GroupCacheAssociation>(sql)
-            .bind(group_id)
-            .fetch_one(&self.pool)
+    pub async fn get_cache_for_resource(
+        &self,
+        resource_type: &str,
+        resource_id: i64,
+    ) -> Result<Option<Cache>, Error> {
+        let sql = "SELECT c.id, c.content, c.refresh_interval, c.created_at, c.updated_at
+                   FROM caches c
+                   JOIN resource_cache rc ON c.id = rc.cache_id
+                   WHERE rc.resource_type = ? AND rc.resource_id = ?";
+        sqlx::query_as::<_, Cache>(sql)
+            .bind(resource_type)
+            .bind(resource_id)
+            .fetch_optional(&self.pool)
             .await
     }
 
-    pub async fn delete_group_cache_association(&self, group_id: i64) -> Result<bool, Error> {
-        let sql = "DELETE FROM group_cache WHERE group_id = ?";
+    pub async fn delete_resource_cache_association(
+        &self,
+        resource_type: &str,
+        resource_id: i64,
+    ) -> Result<bool, Error> {
+        let sql = "DELETE FROM resource_cache WHERE resource_type = ? AND resource_id = ?";
         let result = sqlx::query(sql)
-            .bind(group_id)
+            .bind(resource_type)
+            .bind(resource_id)
             .execute(&self.pool)
             .await?;
         Ok(result.rows_affected() > 0)
@@ -369,29 +415,15 @@ impl DbClient {
         let group = self.get_link_group_by_id(group_id).await?;
 
         // 获取组的所有链接
-        let links = self.get_links_with_cache_info(group_id).await?;
+        let links = self.get_links_by_group(group_id).await?;
 
         // 获取组的缓存关联
-        let cache_association = match self.get_group_cache_association(group_id).await {
-            Ok(assoc) => Some(assoc),
-            Err(_) => None, // 如果没有关联缓存，忽略错误
-        };
-
-        // 获取缓存内容（如果有）
-        let cache_content = if let Some(assoc) = &cache_association {
-            match self.get_file_cache_by_id(assoc.cache_id).await {
-                Ok(cache) => Some(cache.content),
-                Err(_) => None,
-            }
-        } else {
-            None
-        };
+        let cache = self.get_cache_for_resource("group", group_id).await?;
 
         Ok(GroupWithDetails {
             group,
             links,
-            cache_association,
-            cache_content,
+            cache,
         })
     }
 }
@@ -410,18 +442,18 @@ pub struct LinkGroup {
     pub id: i64,
     pub user_id: i64,
     pub group_name: String,
-    pub group_slug: String, // 不再为Option，因为数据库设计为NOT NULL
+    pub group_slug: String,
     pub group_key: Option<String>,
+    pub is_public: bool,
     pub created_at: String,
 }
 
 #[derive(Debug, sqlx::FromRow)]
 pub struct Link {
     pub id: i64,
-    pub group_id: i64,
-    pub cache_id: Option<i64>, // 新增字段
+    pub user_id: i64,
     #[sqlx(rename = "type")]
-    pub type_: String,
+    pub type_: Option<String>,
     pub url: String,
     pub name: Option<String>,
     pub content: Option<String>,
@@ -429,45 +461,22 @@ pub struct Link {
 }
 
 #[derive(Debug, sqlx::FromRow)]
-pub struct LinkWithCache {
+pub struct Cache {
     pub id: i64,
-    pub group_id: i64,
-    pub cache_id: Option<i64>,
-    #[sqlx(rename = "type")]
-    pub type_: String,
-    pub url: String,
-    pub name: Option<String>,
-    pub content: Option<String>,
-    pub created_at: String,
-    pub cache_slug: Option<String>,
-    pub cache_content: Option<String>,
-}
-
-#[derive(Debug, sqlx::FromRow)]
-pub struct FileCache {
-    pub id: i64,
-    pub cache_slug: Option<String>,
     pub content: String,
+    pub refresh_interval: i32,
     pub created_at: String,
     pub updated_at: String,
 }
 
-#[derive(Debug, sqlx::FromRow)]
-pub struct GroupCacheAssociation {
-    pub group_id: i64,
-    pub cache_id: i64,
-}
-
-// 高级查询结果结构体
 #[derive(Debug)]
 pub struct GroupWithDetails {
     pub group: LinkGroup,
-    pub links: Vec<LinkWithCache>,
-    pub cache_association: Option<GroupCacheAssociation>,
-    pub cache_content: Option<String>,
+    pub links: Vec<Link>,
+    pub cache: Option<Cache>,
 }
 
-// 单元测试示例
+
 #[cfg(test)]
 mod tests {
     use super::*;
