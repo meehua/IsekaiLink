@@ -1,6 +1,6 @@
 use axum::{
     response::{Redirect, IntoResponse},
-    http::{StatusCode, HeaderMap, header},
+    http::{HeaderMap, header},
     middleware::{Next},
     extract::{Request, Extension},
 };
@@ -8,6 +8,7 @@ use std::{sync::{Arc}};
 use axum::extract::State;
 use crate::types::app_state::AppState;
 use crate::types::session_store::SessionStore;
+use crate::types::api_response::*;
 
 // 鉴权函数
 pub(crate) async fn auth_middleware(
@@ -44,7 +45,7 @@ pub(crate) async fn auth_middleware(
         }
         None => {
             // 返回401未授权错误
-            StatusCode::UNAUTHORIZED.into_response()
+            ApiResponse::<()>::error(BizCode::Unauthorized, None).into_response()
         }
     }
 }
