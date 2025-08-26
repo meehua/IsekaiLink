@@ -31,29 +31,21 @@ async fn run() {
 
     // 实时鉴权的路由
     let auth_routes = Router::new()
-        .route("/api/manage", get(|| async { "Hello, World!" }))
+        .route("/api", get(|| async { "Hello, World!" }))
         .route_layer(middleware::from_fn_with_state(
             app_state.clone(),
             auth::auth_middleware,
         ))
         .with_state(app_state.clone());
-    // .fallback(||async { StatusCode::INTERNAL_SERVER_ERROR });
 
-    // 登录函数单独一个路由，不具备实时鉴权
-    let login_handler_routes = Router::new()
-        .route("/api/login", post(login::login))
-        .with_state(app_state.clone());
-    // .fallback(||async { StatusCode:: NOT_FOUND });
-
-    // 不具备实时鉴权的路由
+    // 不具备实时鉴权
     let other_routes = Router::new()
-        .route("/", get(|| async { "Hello, World!" }))
+        .route("/api/auth/login", post(login::login))
         .with_state(app_state.clone());
 
     // 合并路由
     let app = Router::new()
         .merge(auth_routes)
-        .merge(login_handler_routes)
         .merge(other_routes)
         .fallback(|| async { StatusCode::NOT_FOUND });
 
