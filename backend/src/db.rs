@@ -362,48 +362,83 @@ impl DbClient {
             .await
     }
 
-    // ============== resource_cache 表操作 ==============
-    pub async fn create_resource_cache_association(
+    // ============== 组缓存关联操作 ==============
+    pub async fn create_group_cache_association(
         &self,
-        resource_type: &str,
-        resource_id: i64,
+        group_id: i64,
         cache_id: i64,
     ) -> Result<bool, Error> {
-        let sql = "INSERT INTO resource_cache (resource_type, resource_id, cache_id) VALUES (?, ?, ?)";
+        let sql = "INSERT OR REPLACE INTO group_caches (group_id, cache_id) VALUES (?, ?)";
         let result = sqlx::query(sql)
-            .bind(resource_type)
-            .bind(resource_id)
+            .bind(group_id)
             .bind(cache_id)
             .execute(&self.pool)
             .await?;
         Ok(result.rows_affected() > 0)
     }
 
-    pub async fn get_cache_for_resource(
+    pub async fn get_cache_for_group(
         &self,
-        resource_type: &str,
-        resource_id: i64,
+        group_id: i64,
     ) -> Result<Option<Cache>, Error> {
         let sql = "SELECT c.id, c.content, c.refresh_interval, c.created_at, c.updated_at
                    FROM caches c
-                   JOIN resource_cache rc ON c.id = rc.cache_id
-                   WHERE rc.resource_type = ? AND rc.resource_id = ?";
+                   JOIN group_caches gc ON c.id = gc.cache_id
+                   WHERE gc.group_id = ?";
         sqlx::query_as::<_, Cache>(sql)
-            .bind(resource_type)
-            .bind(resource_id)
+            .bind(group_id)
             .fetch_optional(&self.pool)
             .await
     }
 
-    pub async fn delete_resource_cache_association(
+    pub async fn delete_group_cache_association(
         &self,
-        resource_type: &str,
-        resource_id: i64,
+        group_id: i64,
     ) -> Result<bool, Error> {
-        let sql = "DELETE FROM resource_cache WHERE resource_type = ? AND resource_id = ?";
+        let sql = "DELETE FROM group_caches WHERE group_id = ?";
         let result = sqlx::query(sql)
-            .bind(resource_type)
-            .bind(resource_id)
+            .bind(group_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    // ============== 链接缓存关联操作 ==============
+    pub async fn create_link_cache_association(
+        &self,
+        link_id: i64,
+        cache_id: i64,
+    ) -> Result<bool, Error> {
+        let sql = "INSERT OR REPLACE INTO link_caches (link_id, cache_id) VALUES (?, ?)";
+        let result = sqlx::query(sql)
+            .bind(link_id)
+            .bind(cache_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn get_cache_for_link(
+        &self,
+        link_id: i64,
+    ) -> Result<Option<Cache>, Error> {
+        let sql = "SELECT c.id, c.content, c.refresh_interval, c.created_at, c.updated_at
+                   FROM caches c
+                   JOIN link_caches lc ON c.id = lc.cache_id
+                   WHERE lc.link_id = ?";
+        sqlx::query_as::<_, Cache>(sql)
+            .bind(link_id)
+            .fetch_optional(&self.pool)
+            .await
+    }
+
+    pub async fn delete_link_cache_association(
+        &self,
+        link_id: i64,
+    ) -> Result<bool, Error> {
+        let sql = "DELETE FROM link_caches WHERE link_id = ?";
+        let result = sqlx::query(sql)
+            .bind(link_id)
             .execute(&self.pool)
             .await?;
         Ok(result.rows_affected() > 0)
@@ -418,7 +453,7 @@ impl DbClient {
         let links = self.get_links_by_group(group_id).await?;
 
         // 获取组的缓存关联
-        let cache = self.get_cache_for_resource("group", group_id).await?;
+        let cache = self.get_cache_for_group(group_id).await?;
 
         Ok(GroupWithDetails {
             group,

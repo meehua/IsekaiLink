@@ -51,24 +51,26 @@ CREATE TABLE IF NOT EXISTS link_group_association (
     FOREIGN KEY (group_id) REFERENCES link_groups(id) ON DELETE CASCADE
 );
 
--- 链接组或链接与缓存的关联表（支持一对一关系）
-CREATE TABLE IF NOT EXISTS resource_cache (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    -- 关联类型：'group' 或 'link'
-    resource_type TEXT NOT NULL CHECK (resource_type IN ('group', 'link')),
-    -- 关联的资源ID（链接组ID或链接ID）
-    resource_id INTEGER NOT NULL,
-    cache_id INTEGER NOT NULL UNIQUE, -- 确保一对一
+-- 链接组缓存关联表
+CREATE TABLE IF NOT EXISTS group_caches (
+    group_id INTEGER NOT NULL PRIMARY KEY, -- 一对一关系，每个组最多一个缓存
+    cache_id INTEGER NOT NULL UNIQUE,      -- 确保缓存唯一性
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    -- 确保同一类型的同一资源只能关联一个缓存
-    UNIQUE(resource_type, resource_id),
+    FOREIGN KEY (group_id) REFERENCES link_groups(id) ON DELETE CASCADE,
     FOREIGN KEY (cache_id) REFERENCES caches(id) ON DELETE CASCADE
-    -- 注意：这里不能直接使用外键约束到两个不同的表
-    -- 需要在应用层确保 resource_id 的有效性
+);
+
+-- 链接缓存关联表
+CREATE TABLE IF NOT EXISTS link_caches (
+    link_id INTEGER NOT NULL PRIMARY KEY, -- 一对一关系，每个链接最多一个缓存
+    cache_id INTEGER NOT NULL UNIQUE,     -- 确保缓存唯一性
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (link_id) REFERENCES links(id) ON DELETE CASCADE,
+    FOREIGN KEY (cache_id) REFERENCES caches(id) ON DELETE CASCADE
 );
 
 -- 为关联表创建索引以提高查询性能
 CREATE INDEX IF NOT EXISTS idx_link_group_association_link ON link_group_association(link_id);
 CREATE INDEX IF NOT EXISTS idx_link_group_association_group ON link_group_association(group_id);
-CREATE INDEX IF NOT EXISTS idx_resource_cache_type_id ON resource_cache(resource_type, resource_id);
-CREATE INDEX IF NOT EXISTS idx_resource_cache_cache ON resource_cache(cache_id);
+CREATE INDEX IF NOT EXISTS idx_group_caches_cache ON group_caches(cache_id);
+CREATE INDEX IF NOT EXISTS idx_link_caches_cache ON link_caches(cache_id);
